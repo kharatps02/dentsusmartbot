@@ -1,6 +1,6 @@
 """
 Smart Dentsu Buddy — Multi-Agent Agentic RAG
-Streamlit app converted from Jupyter notebook.
+Credentials are entered via the Streamlit sidebar — no .env file required.
 """
 
 import os
@@ -10,7 +10,7 @@ import streamlit as st
 
 warnings.filterwarnings("ignore")
 
-# ── Page config (must be first Streamlit call) ────────────────────────────────
+# ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="Smart Dentsu Buddy",
     page_icon="🧠",
@@ -18,14 +18,153 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# ── Lazy imports (inside functions so Streamlit renders while loading) ─────────
-@st.cache_resource(show_spinner="Loading AI models and knowledge bases…")
-def build_graph():
+# ─────────────────────────────────────────────────────────────────────────────
+# SECTION 1 — Credential helpers
+# ─────────────────────────────────────────────────────────────────────────────
+
+REQUIRED_KEYS = [
+    "MODEL_ENDPOINT",
+    "CHAT_MODEL_NAME",
+    "AZURE_OPENAI_API_KEY",
+    "api_version",
+    "MODEL_ENDPOINT_EMBEDDING",
+    "EMBEDDING_MODEL_NAME",
+    "api_version_embedding",
+    "TAVILY_API_KEY",
+]
+
+def creds_complete(creds: dict) -> bool:
+    """Return True only when every required key has a non-empty value."""
+    return all(creds.get(k, "").strip() for k in REQUIRED_KEYS)
+
+
+def render_credentials_form():
+    """
+    Renders the credential input form in the sidebar.
+    Saves values to st.session_state['creds'] on submission.
+    Returns True when valid creds are already stored, False otherwise.
+    """
+    st.sidebar.markdown("## ⚙️ Configuration")
+
+    # Pre-fill from session if already saved
+    saved = st.session_state.get("creds", {})
+
+    with st.sidebar.expander("🔑 Azure OpenAI — Chat", expanded=not creds_complete(saved)):
+        endpoint = st.text_input(
+            "Model Endpoint",
+            value=saved.get("MODEL_ENDPOINT", ""),
+            placeholder="https://YOUR_RESOURCE.openai.azure.com/",
+            key="input_MODEL_ENDPOINT",
+        )
+        model_name = st.text_input(
+            "Chat Deployment Name",
+            value=saved.get("CHAT_MODEL_NAME", ""),
+            placeholder="gpt-4o",
+            key="input_CHAT_MODEL_NAME",
+        )
+        api_key = st.text_input(
+            "API Key",
+            value=saved.get("AZURE_OPENAI_API_KEY", ""),
+            type="password",
+            placeholder="••••••••••••",
+            key="input_AZURE_OPENAI_API_KEY",
+        )
+        api_version = st.text_input(
+            "API Version",
+            value=saved.get("api_version", "2024-08-01-preview"),
+            key="input_api_version",
+        )
+
+    with st.sidebar.expander("🔑 Azure OpenAI — Embeddings", expanded=not creds_complete(saved)):
+        emb_endpoint = st.text_input(
+            "Embedding Endpoint",
+            value=saved.get("MODEL_ENDPOINT_EMBEDDING", ""),
+            placeholder="https://YOUR_RESOURCE.openai.azure.com/",
+            key="input_MODEL_ENDPOINT_EMBEDDING",
+        )
+        emb_model = st.text_input(
+            "Embedding Deployment Name",
+            value=saved.get("EMBEDDING_MODEL_NAME", ""),
+            placeholder="text-embedding-3-large",
+            key="input_EMBEDDING_MODEL_NAME",
+        )
+        emb_api_version = st.text_input(
+            "Embedding API Version",
+            value=saved.get("api_version_embedding", "2024-08-01-preview"),
+            key="input_api_version_embedding",
+        )
+
+    with st.sidebar.expander("🔑 Tavily Web Search", expanded=not creds_complete(saved)):
+        tavily_key = st.text_input(
+            "Tavily API Key",
+            value=saved.get("TAVILY_API_KEY", ""),
+            type="password",
+            placeholder="tvly-••••••••••",
+            key="input_TAVILY_API_KEY",
+        )
+
+    new_creds = {
+        "MODEL_ENDPOINT":           endpoint.strip(),
+        "CHAT_MODEL_NAME":          model_name.strip(),
+        "AZURE_OPENAI_API_KEY":     api_key.strip(),
+        "api_version":              api_version.strip(),
+        "MODEL_ENDPOINT_EMBEDDING": emb_endpoint.strip(),
+        "EMBEDDING_MODEL_NAME":     emb_model.strip(),
+        "api_version_embedding":    emb_api_version.strip(),
+        "TAVILY_API_KEY":           tavily_key.strip(),
+    }
+
+    col1, col2 = st.sidebar.columns(2)
+
+    with col1:
+        save_clicked = st.button("✅ Save & Connect", use_container_width=True, type="primary")
+
+    with col2:
+        reset_clicked = st.button("🔄 Reset", use_container_width=True)
+
+    if reset_clicked:
+        st.session_state.pop("creds", None)
+        st.session_state.pop("graph_ready", None)
+        # Clear the @st.cache_resource so graph rebuilds with new creds
+        build_graph.clear()
+        st.rerun()
+
+    if save_clicked:
+        if creds_complete(new_creds):
+            st.session_state["creds"] = new_creds
+            # Clear cached graph so it rebuilds with the new credentials
+            build_graph.clear()
+            st.session_state.pop("graph_ready", None)
+            st.sidebar.success("✅ Credentials saved!")
+            st.rerun()
+        else:
+            missing = [k for k in REQUIRED_KEYS if not new_creds.get(k, "").strip()]
+            st.sidebar.error(f"Missing: {', '.join(missing)}")
+            return False
+
+    return creds_complete(st.session_state.get("creds", {}))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SECTION 2 — Graph builder (cached per unique credential set)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@st.cache_resource(show_spinner="⚙️ Loading AI models and knowledge bases — this may take a minute…")
+def build_graph(
+    endpoint: str,
+    model_name: str,
+    api_key: str,
+    api_version: str,
+    emb_endpoint: str,
+    emb_model: str,
+    emb_api_version: str,
+    tavily_key: str,
+):
     """
     Builds and compiles the full LangGraph multi-agent graph.
-    Cached so it only runs once per Streamlit session.
+    Arguments are the credential values — @st.cache_resource re-runs
+    only when they change, otherwise returns the cached graph instantly.
     """
-    from dotenv import load_dotenv
     from langchain_community.document_loaders import WebBaseLoader, PyMuPDFLoader
     from langchain_text_splitters import RecursiveCharacterTextSplitter
     from langchain_core.documents import Document
@@ -33,7 +172,7 @@ def build_graph():
     from langchain_chroma import Chroma
     from langchain_core.prompts import ChatPromptTemplate
     from langchain_core.output_parsers import StrOutputParser
-    from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage, AIMessage
+    from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
     from langchain_core.tools import create_retriever_tool, tool
     from langchain_community.tools.tavily_search import TavilySearchResults
     from langchain_community.utilities import SQLDatabase
@@ -43,33 +182,23 @@ def build_graph():
     from pydantic import BaseModel, Field
     from typing import Annotated, Sequence, TypedDict, Literal
 
-    load_dotenv()
-
-    ENDPOINT              = os.environ["MODEL_ENDPOINT"]
-    MODEL_NAME            = os.environ["CHAT_MODEL_NAME"]
-    API_KEY               = os.environ["AZURE_OPENAI_API_KEY"]
-    API_VERSION           = os.environ["api_version"]
-    EMBEDDINGS_MODEL      = os.environ["EMBEDDING_MODEL_NAME"]
-    EMBEDDINGS_ENDPOINT   = os.environ["MODEL_ENDPOINT_EMBEDDING"]
-    API_VERSION_EMBEDDING = os.environ["api_version_embedding"]
-    TAVILY_KEY            = os.environ["TAVILY_API_KEY"]
-
     os.environ["ANONYMIZED_TELEMETRY"] = "False"
+    # Expose Tavily key to environment so TavilySearchResults can pick it up
+    os.environ["TAVILY_API_KEY"] = tavily_key
 
     # ── LLM & Embeddings ──────────────────────────────────────────────────────
     llm = AzureChatOpenAI(
-        azure_deployment=MODEL_NAME,
-        api_version=API_VERSION,
-        azure_endpoint=ENDPOINT,
-        api_key=API_KEY,
+        azure_deployment=model_name,
+        api_version=api_version,
+        azure_endpoint=endpoint,
+        api_key=api_key,
         temperature=0,
     )
-
     embeddings = AzureOpenAIEmbeddings(
-        azure_endpoint=EMBEDDINGS_ENDPOINT,
-        azure_deployment=EMBEDDINGS_MODEL,
-        openai_api_version=API_VERSION_EMBEDDING,
-        api_key=API_KEY,
+        azure_endpoint=emb_endpoint,
+        azure_deployment=emb_model,
+        openai_api_version=emb_api_version,
+        api_key=api_key,
     )
 
     # ── Knowledge Base 1: Campaign JSON ──────────────────────────────────────
@@ -83,7 +212,6 @@ def build_graph():
     else:
         with open("campaigns_db.json", "r") as f:
             campaigns_raw = json.load(f)
-
         campaign_documents = [
             Document(
                 page_content="\n".join(f"{k}: {v}" for k, v in c.items()),
@@ -97,7 +225,6 @@ def build_graph():
             )
             for i, c in enumerate(campaigns_raw)
         ]
-
         vectordb_campaigns = Chroma.from_documents(
             documents=campaign_documents,
             collection_name="campaigns-db",
@@ -105,12 +232,11 @@ def build_graph():
             persist_directory=PERSIST_CAMPAIGNS,
         )
 
-    retriever_campaigns = vectordb_campaigns.as_retriever(
-        search_type="similarity_score_threshold",
-        search_kwargs={"score_threshold": 0.5, "k": 5},
-    )
     retriever_tool_campaigns = create_retriever_tool(
-        retriever=retriever_campaigns,
+        retriever=vectordb_campaigns.as_retriever(
+            search_type="similarity_score_threshold",
+            search_kwargs={"score_threshold": 0.5, "k": 5},
+        ),
         name="search_campaigns_db",
         description=(
             "Search and return information about marketing campaigns, advertising strategies, "
@@ -138,35 +264,29 @@ def build_graph():
         all_pdf_docs = []
         for pdf_file in pdf_files:
             if os.path.exists(pdf_file):
-                docs = PyMuPDFLoader(pdf_file).load_and_split()
-                all_pdf_docs.extend(docs)
-
-        pdf_texts = text_splitter.split_documents(all_pdf_docs)
+                all_pdf_docs.extend(PyMuPDFLoader(pdf_file).load_and_split())
         vectordb_pdf = Chroma.from_documents(
-            documents=pdf_texts,
+            documents=text_splitter.split_documents(all_pdf_docs),
             collection_name="marketing-pdf-docs",
             embedding=embeddings,
             persist_directory=PERSIST_PDF,
         )
 
-    retriever_pdf = vectordb_pdf.as_retriever(
-        search_type="similarity_score_threshold",
-        search_kwargs={"score_threshold": 0.5, "k": 5},
-    )
     retriever_tool_pdf = create_retriever_tool(
-        retriever=retriever_pdf,
+        retriever=vectordb_pdf.as_retriever(
+            search_type="similarity_score_threshold",
+            search_kwargs={"score_threshold": 0.5, "k": 5},
+        ),
         name="search_marketing_research",
         description=(
             "Search and return information from marketing and advertising research papers about "
-            "content effectiveness in advertising, creative strategy, audience engagement, digital "
-            "transformation in marketing, MarTech, data-driven marketing, omnichannel strategy, "
-            "programmatic advertising, and marketing automation."
+            "content effectiveness, digital transformation in marketing, MarTech, data-driven "
+            "marketing, omnichannel strategy, programmatic advertising, and marketing automation."
         ),
     )
 
     # ── Knowledge Base 3: Marketing Law Web Articles ──────────────────────────
     PERSIST_WEB = "marketing_law_articles_db"
-
     if os.path.exists(PERSIST_WEB):
         vectordb_web = Chroma(
             collection_name="marketing-web-docs",
@@ -178,28 +298,24 @@ def build_graph():
             "https://tenthings.blog/2023/06/30/ten-things-marketing-law-basics-for-in-house-counsel/",
             "https://blog.ipleaders.in/marketing-media-consumer-protection-law-india/",
         ]
-        docs = [WebBaseLoader(url).load() for url in marketing_urls]
-        docs_list = [item for sublist in docs for item in sublist]
-        web_texts = text_splitter.split_documents(docs_list)
+        docs_list = [item for url in marketing_urls for item in WebBaseLoader(url).load()]
         vectordb_web = Chroma.from_documents(
-            documents=web_texts,
+            documents=text_splitter.split_documents(docs_list),
             collection_name="marketing-web-docs",
             embedding=embeddings,
             persist_directory=PERSIST_WEB,
         )
 
-    retriever_web = vectordb_web.as_retriever(
-        search_type="similarity_score_threshold",
-        search_kwargs={"score_threshold": 0.5, "k": 5},
-    )
     retriever_tool_web = create_retriever_tool(
-        retriever=retriever_web,
+        retriever=vectordb_web.as_retriever(
+            search_type="similarity_score_threshold",
+            search_kwargs={"score_threshold": 0.5, "k": 5},
+        ),
         name="search_marketing_law_articles",
         description=(
             "Search and retrieve legal and compliance-focused insights on marketing, advertising, "
-            "media, and consumer protection topics. Use for questions related to marketing law basics, "
-            "advertising compliance, truthful and non-misleading claims, endorsements, and consumer "
-            "protection considerations in India."
+            "media, and consumer protection. Use for marketing law basics, advertising compliance, "
+            "truthful and non-misleading claims, endorsements, and consumer protection in India."
         ),
     )
 
@@ -216,20 +332,19 @@ def build_graph():
         Use this tool when the user asks about offices, employees, clients, campaigns,
         media channels, campaign placements, invoices, billing, revenue, budgets,
         impressions, or any structured data stored in the database."""
-        result = sql_agent_executor.invoke({"input": question})
-        return result["output"]
+        return sql_agent_executor.invoke({"input": question})["output"]
 
     # ── Web Search Tool ───────────────────────────────────────────────────────
     tavily_search = TavilySearchResults(max_results=5, search_depth="advanced", include_raw_content=True)
 
     @tool
     def search_web(query: str) -> str:
-        """Search the web for current information, news, recent events, or any general
-        knowledge question not in the knowledge bases. Use for recent platform updates,
-        marketing industry news, current regulations, or anything not in the other sources."""
+        """Search the web for current information, news, recent events, or anything
+        not in the knowledge bases. Use for recent platform updates, marketing industry
+        news, current regulations, or any live information."""
         results = tavily_search.invoke(query)
         parts = [
-            f"Title: {r.get('title', '')}\nContent: {r.get('content', '')}\nSource: {r.get('url', '')}"
+            f"Title: {r.get('title','')}\nContent: {r.get('content','')}\nSource: {r.get('url','')}"
             for r in results
         ]
         return "\n\n---\n\n".join(parts) if parts else "No results found."
@@ -241,24 +356,23 @@ def build_graph():
         )
 
     GUARDRAIL_PROMPT = """
-Classify the following user query according to whether it is related to marketing, advertising,
-media planning, brand strategy, campaign management, digital marketing, content strategy,
-programmatic advertising, media buying, creative strategy, audience targeting, marketing analytics,
-ROI measurement, social media marketing, SEO/SEM, influencer marketing, MarTech, CRM,
-advertising technology, marketing operations, or legal and compliance topics related to marketing,
-advertising, media, consumer protection, misleading claims, endorsements, disclosures, promotions,
-and brand communications.
+Classify the user query: is it related to marketing, advertising, media planning, brand strategy,
+campaign management, digital marketing, content strategy, programmatic advertising, media buying,
+creative strategy, audience targeting, marketing analytics, ROI measurement, social media, SEO/SEM,
+influencer marketing, MarTech, CRM, advertising technology, marketing operations, or legal/compliance
+topics related to marketing, advertising, media, consumer protection, endorsements, or brand comms?
 
-Also classify as YES if the query is about business data, clients, employees, offices, invoices,
+Also classify as YES for business data questions about clients, employees, offices, invoices,
 budgets, or any operational data relevant to a marketing and advertising agency.
 
-Return either YES or NO.
+Return YES or NO only.
 """
 
     def check_guardrail(query: str) -> dict:
-        messages = [SystemMessage(content=GUARDRAIL_PROMPT), HumanMessage(content=query)]
-        classifier = llm.with_structured_output(MarketingDecision)
-        result = classifier.invoke(messages)
+        result = llm.with_structured_output(MarketingDecision).invoke([
+            SystemMessage(content=GUARDRAIL_PROMPT),
+            HumanMessage(content=query),
+        ])
         if result.decision != "YES":
             return {
                 "approved": False,
@@ -271,7 +385,7 @@ Return either YES or NO.
 
     # ── State ─────────────────────────────────────────────────────────────────
     class MultiAgentState(TypedDict):
-        messages: Annotated[Sequence[BaseMessage], add_messages]
+        messages: Annotated[Sequence[object], add_messages]
         next_agent: str
 
     # ── Supervisor ────────────────────────────────────────────────────────────
@@ -290,17 +404,16 @@ AVAILABLE AGENTS:
 1. campaign_agent   — Campaign examples, strategies, case studies, channel recommendations (ChromaDB/JSON)
 2. research_agent   — Research findings, academic insights, marketing theory (PDFs)
 3. legal_agent      — Laws, regulations, compliance, consumer protection (web articles)
-4. web_search_agent — Current events, recent news, platform updates (live Tavily search)
+4. web_search_agent — Current events, recent news, live platform updates (Tavily)
 5. sql_agent        — Operational data: offices, employees, clients, budgets, invoices, impressions (SQLite)
-6. FINISH           — Simple definitions or general knowledge you can answer directly
+6. FINISH           — Simple definitions or general knowledge answerable directly
 
 Choose the MOST relevant agent. If the query spans multiple domains, pick the primary one.
 """
 
     def supervisor_node(state: MultiAgentState):
         question = state["messages"][0].content
-        router_llm = llm.with_structured_output(SupervisorRouting)
-        routing = router_llm.invoke([
+        routing = llm.with_structured_output(SupervisorRouting).invoke([
             SystemMessage(content=SUPERVISOR_PROMPT),
             HumanMessage(content=f"User question: {question}"),
         ])
@@ -313,7 +426,7 @@ Choose the MOST relevant agent. If the query spans multiple domains, pick the pr
     def make_retriever_agent(agent_name: str, tool_func):
         def agent_node(state: MultiAgentState):
             question = state["messages"][0].content
-            results = tool_func.invoke(question)
+            results  = tool_func.invoke(question)
             return {"messages": [AIMessage(content=f"[{agent_name}] Retrieved results:\n\n{results}")]}
         agent_node.__name__ = agent_name
         return agent_node
@@ -324,19 +437,18 @@ Choose the MOST relevant agent. If the query spans multiple domains, pick the pr
 
     def web_search_agent_node(state: MultiAgentState):
         question = state["messages"][0].content
-        results  = search_web.invoke(question)
-        return {"messages": [AIMessage(content=f"[web_search_agent] Web results:\n\n{results}")]}
+        return {"messages": [AIMessage(content=f"[web_search_agent] Web results:\n\n{search_web.invoke(question)}")]}
 
     def sql_agent_node(state: MultiAgentState):
         question = state["messages"][0].content
-        results  = query_database.invoke(question)
-        return {"messages": [AIMessage(content=f"[sql_agent] Database results:\n\n{results}")]}
+        return {"messages": [AIMessage(content=f"[sql_agent] Database results:\n\n{query_database.invoke(question)}")]}
 
-    # ── Generate node ─────────────────────────────────────────────────────────
+    # ── Generate & direct-answer nodes ───────────────────────────────────────
     def generate_node(state: MultiAgentState):
         question = state["messages"][0].content
         context  = "\n\n".join(
-            msg.content for msg in state["messages"][1:] if hasattr(msg, "content") and msg.content
+            msg.content for msg in state["messages"][1:]
+            if hasattr(msg, "content") and msg.content
         )
         prompt = ChatPromptTemplate.from_messages([
             ("system",
@@ -355,7 +467,7 @@ Choose the MOST relevant agent. If the query spans multiple domains, pick the pr
         question = state["messages"][0].content
         prompt = ChatPromptTemplate.from_messages([
             ("system", "You are a helpful marketing and advertising assistant for Dentsu. "
-                       "Answer the following question directly and concisely."),
+                       "Answer the question directly and concisely."),
             ("human", "{question}"),
         ])
         answer = (prompt | llm | StrOutputParser()).invoke({"question": question})
@@ -368,7 +480,6 @@ Choose the MOST relevant agent. If the query spans multiple domains, pick the pr
 
     # ── Graph assembly ────────────────────────────────────────────────────────
     workflow = StateGraph(MultiAgentState)
-
     workflow.add_node("supervisor",       supervisor_node)
     workflow.add_node("campaign_agent",   campaign_agent_node)
     workflow.add_node("research_agent",   research_agent_node)
@@ -389,56 +500,58 @@ Choose the MOST relevant agent. If the query spans multiple domains, pick the pr
     })
     for agent in ["campaign_agent", "research_agent", "legal_agent", "web_search_agent", "sql_agent"]:
         workflow.add_edge(agent, "generate")
-
     workflow.add_edge("generate",      END)
     workflow.add_edge("direct_answer", END)
 
-    graph = workflow.compile()
-
-    return graph, check_guardrail
+    return workflow.compile(), check_guardrail
 
 
-# ── UI ─────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
+# SECTION 3 — UI helpers
+# ─────────────────────────────────────────────────────────────────────────────
 
 def render_header():
     st.markdown("""
     <div style="background: linear-gradient(135deg, #000000 0%, #1A1A2E 50%, #E30613 100%);
-                padding: 32px 24px; border-radius: 12px; color: white; text-align: center; margin-bottom: 24px;">
-        <h1 style="color: white; font-size: 2em; margin-bottom: 4px;">🧠 Smart Dentsu Buddy</h1>
-        <h3 style="color: #FFB4B4; font-weight: 400; margin-top: 0; font-size: 1em;">
+                padding: 32px 24px; border-radius: 12px; color: white;
+                text-align: center; margin-bottom: 24px;">
+        <h1 style="color:white; font-size:2em; margin-bottom:4px;">🧠 Smart Dentsu Buddy</h1>
+        <h3 style="color:#FFB4B4; font-weight:400; margin-top:0; font-size:1em;">
             Supervisor-Based Multi-Agent Marketing &amp; Advertising Assistant
         </h3>
     </div>
     """, unsafe_allow_html=True)
 
 
-def render_sidebar():
-    with st.sidebar:
-        st.markdown("## 🤖 Agent Roster")
-        agents = [
-            ("📁", "Campaign Agent",    "Campaign examples, strategies, benchmarks"),
-            ("📄", "Research Agent",    "Marketing research PDFs & academic insights"),
-            ("⚖️",  "Legal Agent",       "Compliance, consumer protection, ad law"),
-            ("🌐", "Web Search Agent",  "Live internet search via Tavily"),
-            ("🗄️",  "SQL Agent",         "Dentsu operational database (Text2SQL)"),
-        ]
-        for icon, name, desc in agents:
-            st.markdown(f"**{icon} {name}**  \n<small>{desc}</small>", unsafe_allow_html=True)
-            st.divider()
+def render_agent_roster():
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("## 🤖 Agent Roster")
+    agents = [
+        ("📁", "Campaign Agent",    "Campaign examples, strategies, benchmarks"),
+        ("📄", "Research Agent",    "Marketing research PDFs & academic insights"),
+        ("⚖️",  "Legal Agent",       "Compliance, consumer protection, ad law"),
+        ("🌐", "Web Search Agent",  "Live internet search via Tavily"),
+        ("🗄️",  "SQL Agent",         "Dentsu operational database (Text2SQL)"),
+    ]
+    for icon, name, desc in agents:
+        st.sidebar.markdown(f"**{icon} {name}**  \n<small>{desc}</small>", unsafe_allow_html=True)
+        st.sidebar.divider()
 
-        st.markdown("## 💡 Example Questions")
-        examples = [
-            "Find a successful digital campaign for a CPG brand",
-            "What are key findings on content effectiveness in advertising?",
-            "What are the legal basics for marketing law and consumer protection in India?",
-            "Latest Google Ads platform updates in 2026?",
-            "Which media channel has the most impressions booked?",
-            "List all employees in the Mumbai office",
-            "What does CPM stand for in digital advertising?",
-        ]
-        for ex in examples:
-            if st.button(ex, use_container_width=True):
-                st.session_state["pending_question"] = ex
+
+def render_examples():
+    st.sidebar.markdown("## 💡 Example Questions")
+    examples = [
+        "Find a successful digital campaign for a CPG brand",
+        "What are key findings on content effectiveness in advertising?",
+        "Legal basics for marketing law and consumer protection in India?",
+        "Latest Google Ads platform updates in 2026?",
+        "Which media channel has the most impressions booked?",
+        "List all employees in the Mumbai office",
+        "What does CPM stand for in digital advertising?",
+    ]
+    for ex in examples:
+        if st.sidebar.button(ex, use_container_width=True):
+            st.session_state["pending_question"] = ex
 
 
 def render_trace(steps: list):
@@ -449,85 +562,119 @@ def render_trace(steps: list):
             st.divider()
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# SECTION 4 — Main
+# ─────────────────────────────────────────────────────────────────────────────
+
 def main():
     render_header()
-    render_sidebar()
 
-    # Load graph once
-    graph, check_guardrail = build_graph()
+    # ── Step 1: Collect credentials from sidebar ──────────────────────────────
+    creds_ready = render_credentials_form()
 
-    # Chat history
+    if not creds_ready:
+        st.info(
+            "👈 **Enter your credentials in the sidebar to get started.**\n\n"
+            "Fill in your Azure OpenAI and Tavily API keys, then click **Save & Connect**."
+        )
+        st.stop()   # Don't render the chat until credentials are in
+
+    # ── Step 2: Build (or retrieve cached) graph using the saved credentials ──
+    creds = st.session_state["creds"]
+    try:
+        graph, check_guardrail = build_graph(
+            endpoint     = creds["MODEL_ENDPOINT"],
+            model_name   = creds["CHAT_MODEL_NAME"],
+            api_key      = creds["AZURE_OPENAI_API_KEY"],
+            api_version  = creds["api_version"],
+            emb_endpoint = creds["MODEL_ENDPOINT_EMBEDDING"],
+            emb_model    = creds["EMBEDDING_MODEL_NAME"],
+            emb_api_version = creds["api_version_embedding"],
+            tavily_key   = creds["TAVILY_API_KEY"],
+        )
+    except Exception as e:
+        st.error(f"❌ Failed to initialise agents: {e}")
+        st.info("Please check your credentials in the sidebar and click **Save & Connect** again.")
+        build_graph.clear()
+        st.stop()
+
+    # ── Step 3: Render agent roster + examples once connected ─────────────────
+    render_agent_roster()
+    render_examples()
+
+    st.sidebar.success("🟢 Connected & Ready")
+
+    # ── Step 4: Chat UI ───────────────────────────────────────────────────────
     if "messages" not in st.session_state:
         st.session_state.messages = []
 
-    # Render history
     for msg in st.session_state.messages:
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
 
-    # Handle sidebar example button clicks
+    # Handle sidebar example button
     if "pending_question" in st.session_state:
         user_input = st.session_state.pop("pending_question")
     else:
         user_input = st.chat_input("Ask me anything about marketing, campaigns, or Dentsu data…")
 
-    if user_input:
-        # Show user message
-        st.session_state.messages.append({"role": "user", "content": user_input})
-        with st.chat_message("user"):
-            st.markdown(user_input)
+    if not user_input:
+        return
 
-        with st.chat_message("assistant"):
-            status_placeholder = st.empty()
-            answer_placeholder  = st.empty()
-            trace_steps = []
+    # Show user message
+    st.session_state.messages.append({"role": "user", "content": user_input})
+    with st.chat_message("user"):
+        st.markdown(user_input)
 
-            # Guardrail check
-            status_placeholder.info("🛡️ Checking query scope…")
-            guardrail = check_guardrail(user_input)
+    with st.chat_message("assistant"):
+        status   = st.empty()
+        answer_p = st.empty()
+        trace_steps = []
 
-            if not guardrail["approved"]:
-                status_placeholder.empty()
-                answer_placeholder.warning(guardrail["message"])
-                st.session_state.messages.append({"role": "assistant", "content": guardrail["message"]})
-                return
+        # Guardrail
+        status.info("🛡️ Checking query scope…")
+        guardrail = check_guardrail(user_input)
 
-            # Run agent graph
-            status_placeholder.info("🤖 Supervisor is routing your query…")
-            inputs = {"messages": [("user", user_input)], "next_agent": ""}
-            final_answer = ""
-            step = 0
+        if not guardrail["approved"]:
+            status.empty()
+            answer_p.warning(guardrail["message"])
+            st.session_state.messages.append({"role": "assistant", "content": guardrail["message"]})
+            return
 
-            for event in graph.stream(inputs):
-                for node_name, node_output in event.items():
-                    step += 1
-                    msgs = node_output.get("messages", [])
-                    detail = ""
+        # Run graph
+        status.info("🤖 Supervisor is routing your query…")
+        inputs       = {"messages": [("user", user_input)], "next_agent": ""}
+        final_answer = ""
+        step         = 0
 
-                    if node_name == "supervisor":
-                        status_placeholder.info(f"🧭 Supervisor routing… (step {step})")
-                        if msgs:
-                            detail = msgs[-1].content
-                    elif node_name in ("generate", "direct_answer"):
-                        status_placeholder.info("✍️ Writing final answer…")
-                        if msgs:
-                            final_answer = msgs[-1].content
-                            detail = f"{len(final_answer)} chars generated"
-                    else:
-                        status_placeholder.info(f"🔎 {node_name} is searching… (step {step})")
-                        if msgs:
-                            detail = f"Retrieved {len(msgs[-1].content)} chars"
+        for event in graph.stream(inputs):
+            for node_name, node_output in event.items():
+                step += 1
+                msgs   = node_output.get("messages", [])
+                detail = ""
 
-                    trace_steps.append({"step": step, "node": node_name, "detail": detail})
+                if node_name == "supervisor":
+                    status.info(f"🧭 Supervisor routing… (step {step})")
+                    detail = msgs[-1].content if msgs else ""
+                elif node_name in ("generate", "direct_answer"):
+                    status.info("✍️ Writing final answer…")
+                    if msgs:
+                        final_answer = msgs[-1].content
+                        detail = f"{len(final_answer)} chars generated"
+                else:
+                    status.info(f"🔎 {node_name} searching… (step {step})")
+                    detail = f"Retrieved {len(msgs[-1].content)} chars" if msgs else ""
 
-            status_placeholder.empty()
+                trace_steps.append({"step": step, "node": node_name, "detail": detail})
 
-            if final_answer:
-                answer_placeholder.markdown(final_answer)
-                render_trace(trace_steps)
-                st.session_state.messages.append({"role": "assistant", "content": final_answer})
-            else:
-                answer_placeholder.error("No answer generated. Please try again.")
+        status.empty()
+
+        if final_answer:
+            answer_p.markdown(final_answer)
+            render_trace(trace_steps)
+            st.session_state.messages.append({"role": "assistant", "content": final_answer})
+        else:
+            answer_p.error("No answer generated. Please try again.")
 
 
 if __name__ == "__main__":
