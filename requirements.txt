@@ -1,35 +1,32 @@
-# ── Streamlit ──────────────────────────────────────────────────────────────────
-streamlit>=1.35.0
+# ── Exact versions from first successful Streamlit Cloud boot (2026-05-22 06:53:52) ──
+# DO NOT change these versions — they are proven to resolve correctly together.
+# The deepeval warnings about rich/click are harmless — pip still installs successfully.
 
-# ── LangChain ecosystem ────────────────────────────────────────────────────────
-# langchain-core intentionally unpinned — langchain-chroma 0.2.4 needs >=0.3.60
-langchain==0.3.25
-langchain-community==0.3.24
-langchain-openai==0.3.16
-langchain-text-splitters==0.3.8
-langchain-chroma==0.2.4
+streamlit==1.57.0
 
-# ── LangGraph ──────────────────────────────────────────────────────────────────
-langgraph==0.4.8
+# LangChain — v1 release line (1.x = stable, same import paths as 0.3.x)
+langchain==1.2.17
+langchain-core==1.3.3
+langchain-classic==1.0.5
+langchain-community==0.4.1
+langchain-openai==1.1.10
+langchain-text-splitters==1.1.2
+langchain-chroma==1.1.0
 
-# ── Vector store ───────────────────────────────────────────────────────────────
-# Pin chromadb to last version before it pulled in opentelemetry-exporter-otlp-proto-grpc
-# which conflicts with protobuf>=4.x. chromadb 0.5.x uses pure httpx client, no gRPC.
-chromadb==0.5.23
+# LangGraph
+langgraph==1.1.10
 
-# ── Protobuf — must stay on 3.x to avoid "Descriptors cannot be created directly" ──
-# chromadb 0.6+ and opentelemetry-exporter-otlp-proto-grpc pull in protobuf>=4
-# which breaks descriptor creation. Pin to last safe 3.x release.
-protobuf>=3.20.0,<4.0.0
+# Vector store
+chromadb==1.5.9
 
-# ── PDF loading ────────────────────────────────────────────────────────────────
-pymupdf==1.25.5
+# PDF loading
+pymupdf==1.27.2.3
 
-# ── Web search ─────────────────────────────────────────────────────────────────
+# Web search (replaces deprecated TavilySearchResults from langchain-community)
 langchain-tavily>=0.1.0
 
-# ── SQL ────────────────────────────────────────────────────────────────────────
-sqlalchemy>=2.0.0
+# SQL
+sqlalchemy==2.0.49
 
-# ── Pydantic ───────────────────────────────────────────────────────────────────
-pydantic>=2.0.0
+# Pydantic
+pydantic==2.13.4
