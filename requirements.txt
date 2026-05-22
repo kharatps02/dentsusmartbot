@@ -1,10 +1,4 @@
-# ── Exact versions from first successful Streamlit Cloud boot (2026-05-22 06:53:52) ──
-# DO NOT change these versions — they are proven to resolve correctly together.
-# The deepeval warnings about rich/click are harmless — pip still installs successfully.
-
-streamlit==1.57.0
-
-# LangChain — v1 release line (1.x = stable, same import paths as 0.3.x)
+langgraph==1.1.10
 langchain==1.2.17
 langchain-core==1.3.3
 langchain-classic==1.0.5
@@ -12,21 +6,22 @@ langchain-community==0.4.1
 langchain-openai==1.1.10
 langchain-text-splitters==1.1.2
 langchain-chroma==1.1.0
-
-# LangGraph
-langgraph==1.1.10
-
-# Vector store
-chromadb==1.5.9
-
-# PDF loading
+rank_bm25==0.2.2
 pymupdf==1.27.2.3
-
-# Web search (replaces deprecated TavilySearchResults from langchain-community)
-langchain-tavily>=0.1.0
-
-# SQL
-sqlalchemy==2.0.49
-
-# Pydantic
-pydantic==2.13.4
+python-dotenv
+deepeval==3.9.9
+pillow
+pandas==3.0.2
+ipython
+nltk==3.9.4
+numpy==1.26.4
+gensim==4.4.0
+streamlit
+requests
+sqlalchemy
+tavily-python
+python-docx
+beautifulsoup4
+openpyxl
+matplotlib
+tabulate
