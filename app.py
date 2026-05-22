@@ -7,6 +7,7 @@ from langchain.agents import create_agent
 from langchain_community.tools.tavily_search import TavilySearchResults
 from langgraph.checkpoint.memory import InMemorySaver
 import warnings
+import uuid
 
 warnings.filterwarnings('ignore')
 
@@ -22,6 +23,10 @@ st.set_page_config(
 )
 
 st.title("🤖 Dentsu Multi-User Conversational AI Research Assistant")
+
+# Default theme in session_state
+if "theme" not in st.session_state:
+    st.session_state.theme = "Modern Light"
 
 # ============================================================================
 # SIDEBAR: CREDENTIALS INPUT
@@ -183,16 +188,81 @@ if st.session_state.credentials_loaded:
         
         # Sidebar: User session management
         st.sidebar.header("👤 User Session")
+
+        # Theme selector
+        theme_choice = st.sidebar.radio(
+            "Theme",
+            ("Modern Light", "Modern Dark"),
+            index=0 if st.session_state.theme == "Modern Light" else 1,
+        )
+        st.session_state.theme = theme_choice
+
+        # Inject theme CSS
+        if st.session_state.theme == "Modern Dark":
+            st.markdown(
+                """
+                <style>
+                .css-1d391kg {background: linear-gradient(180deg,#0f1724,#071021);} /* main */
+                .stApp {background: linear-gradient(180deg,#0f1724,#071021);}
+                .css-1lcbmhc {background-color: rgba(255,255,255,0.02);} /* container */
+                .block-container{background: rgba(10,20,30,0.6); border-radius:12px; padding:18px}
+                .stSidebar {background: linear-gradient(180deg,#071021,#0f1724);}
+                .stButton>button {border-radius:8px}
+                .stChatMessage {background: rgba(255,255,255,0.03)}
+                </style>
+                """,
+                unsafe_allow_html=True,
+            )
+        else:
+            st.markdown(
+                """
+                <style>
+                .stApp {background: linear-gradient(180deg,#f5f7fb,#e9eef8);} 
+                .block-container{background: rgba(255,255,255,0.9); border-radius:12px; padding:18px}
+                .stSidebar {background: linear-gradient(180deg,#ffffff,#f1f5f9);}
+                .stButton>button {border-radius:8px}
+                .stChatMessage {background: rgba(0,0,0,0.03)}
+                </style>
+                """,
+                unsafe_allow_html=True,
+            )
+
+        # Initialize or persist a session id in session_state
+        if "session_id" not in st.session_state or not st.session_state.session_id:
+            st.session_state.session_id = f"dentsu_analyst_{uuid.uuid4().hex[:6]}"
+
         session_id = st.sidebar.text_input(
             "Enter Your User ID",
-            value="dentsu_analyst_01",
+            value=st.session_state.session_id,
             help="Each user gets their own conversation history"
         )
-        
+
+        # Persist any manual edits to the session id
+        st.session_state.session_id = session_id
+
+        # Allow generating a new random session id
+        if st.sidebar.button("🔁 Generate New Session ID"):
+            st.session_state.session_id = f"dentsu_analyst_{uuid.uuid4().hex[:6]}"
+            st.experimental_rerun()
+
+        # Start a completely new session: clear messages and agent/memory
+        if st.sidebar.button("🆕 Start New Session"):
+            st.session_state.messages = []
+            # Remove agent so it will be reinitialized with fresh memory
+            if "agent" in st.session_state:
+                try:
+                    del st.session_state.agent
+                except Exception:
+                    pass
+            st.session_state.agent_initialized = False
+            st.session_state.session_id = f"dentsu_analyst_{uuid.uuid4().hex[:6]}"
+            st.success("✅ New session started")
+            st.experimental_rerun()
+
         if st.sidebar.button("🔄 Clear Conversation History"):
-            # Note: InMemorySaver doesn't persist across app restarts anyway,
-            # but we could clear a specific session if needed
-            st.success("Conversation history will reset on next message.")
+            # Clear only conversation messages for current session
+            st.session_state.messages = []
+            st.success("Conversation history cleared for current session.")
         
         # Initialize chat history
         if "messages" not in st.session_state:
