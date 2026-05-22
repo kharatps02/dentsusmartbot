@@ -183,35 +183,16 @@ if st.session_state.credentials_loaded:
         
         # Sidebar: User session management
         st.sidebar.header("👤 User Session")
-
-        # Initialize session counter and id
-        if "session_counter" not in st.session_state:
-            st.session_state.session_counter = 1
-        if "session_id" not in st.session_state or not st.session_state.session_id:
-            st.session_state.session_id = f"dentsu_analyst_{st.session_state.session_counter:02d}"
-
-        # Display current session id (non-editable) and provide easy copy
-        st.sidebar.markdown("**Current Session ID**")
-        st.sidebar.code(st.session_state.session_id)
-
-        # Button: Start a new session (increments counter, resets memory)
-        if st.sidebar.button("🆕 Start New Session"):
-            st.session_state.session_counter += 1
-            st.session_state.session_id = f"dentsu_analyst_{st.session_state.session_counter:02d}"
-            st.session_state.messages = []
-            if "agent" in st.session_state:
-                try:
-                    del st.session_state.agent
-                except Exception:
-                    pass
-            st.session_state.agent_initialized = False
-            st.success("✅ New session started: " + st.session_state.session_id)
-            st.experimental_rerun()
-
-        # Clear only conversation messages for current session
+        session_id = st.sidebar.text_input(
+            "Enter Your User ID",
+            value="dentsu_analyst_01",
+            help="Each user gets their own conversation history"
+        )
+        
         if st.sidebar.button("🔄 Clear Conversation History"):
-            st.session_state.messages = []
-            st.success("Conversation history cleared for current session.")
+            # Note: InMemorySaver doesn't persist across app restarts anyway,
+            # but we could clear a specific session if needed
+            st.success("Conversation history will reset on next message.")
         
         # Initialize chat history
         if "messages" not in st.session_state:
@@ -249,7 +230,7 @@ if st.session_state.credentials_loaded:
                 try:
                     result = st.session_state.agent.invoke(
                         {"messages": [{"role": "user", "content": user_input}]},
-                        {"configurable": {"thread_id": st.session_state.session_id}}
+                        {"configurable": {"thread_id": session_id}}
                     )
                     
                     response = result["messages"][-1].content
