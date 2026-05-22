@@ -106,7 +106,7 @@ def initialize_agent():
         max_results=5,
         search_depth='advanced',
         include_raw_content=True,
-        api_key=st.session_state.tavily_api_key
+        tavily_api_key=st.session_state.tavily_api_key
     )
     
     @tool
