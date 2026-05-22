@@ -2,9 +2,7 @@
 streamlit>=1.35.0
 
 # ── LangChain ecosystem ────────────────────────────────────────────────────────
-# Let pip resolve langchain-core version — do NOT pin it
-# langchain-chroma 0.2.4 needs >=0.3.60, langchain 0.3.25 needs >=0.3.58
-# Unpinning langchain-core lets the resolver pick a compatible version (0.3.60+)
+# langchain-core intentionally unpinned — langchain-chroma 0.2.4 needs >=0.3.60
 langchain==0.3.25
 langchain-community==0.3.24
 langchain-openai==0.3.16
@@ -15,12 +13,19 @@ langchain-chroma==0.2.4
 langgraph==0.4.8
 
 # ── Vector store ───────────────────────────────────────────────────────────────
-chromadb>=0.6.0
+# Pin chromadb to last version before it pulled in opentelemetry-exporter-otlp-proto-grpc
+# which conflicts with protobuf>=4.x. chromadb 0.5.x uses pure httpx client, no gRPC.
+chromadb==0.5.23
+
+# ── Protobuf — must stay on 3.x to avoid "Descriptors cannot be created directly" ──
+# chromadb 0.6+ and opentelemetry-exporter-otlp-proto-grpc pull in protobuf>=4
+# which breaks descriptor creation. Pin to last safe 3.x release.
+protobuf>=3.20.0,<4.0.0
 
 # ── PDF loading ────────────────────────────────────────────────────────────────
 pymupdf==1.25.5
 
-# ── Web search — use langchain-tavily (TavilySearchResults is deprecated) ──────
+# ── Web search ─────────────────────────────────────────────────────────────────
 langchain-tavily>=0.1.0
 
 # ── SQL ────────────────────────────────────────────────────────────────────────

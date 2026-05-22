@@ -10,6 +10,9 @@ import streamlit as st
 
 warnings.filterwarnings("ignore")
 
+# Safety net for protobuf descriptor conflict (chromadb + opentelemetry-grpc)
+os.environ.setdefault("PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION", "python")
+
 # ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="Smart Dentsu Buddy",
@@ -174,7 +177,7 @@ def build_graph(
     from langchain_core.output_parsers import StrOutputParser
     from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
     from langchain_core.tools import create_retriever_tool, tool
-    from langchain_community.tools.tavily_search import TavilySearchResults
+    from langchain_tavily import TavilySearch
     from langchain_community.utilities import SQLDatabase
     from langchain_community.agent_toolkits import create_sql_agent
     from langgraph.graph import StateGraph, START, END
@@ -335,7 +338,7 @@ def build_graph(
         return sql_agent_executor.invoke({"input": question})["output"]
 
     # ── Web Search Tool ───────────────────────────────────────────────────────
-    tavily_search = TavilySearchResults(max_results=5, search_depth="advanced", include_raw_content=True)
+    tavily_search = TavilySearch(max_results=5, search_depth="advanced", include_raw_content=True)
 
     @tool
     def search_web(query: str) -> str:
