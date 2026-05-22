@@ -80,6 +80,20 @@ with st.sidebar.form("credentials_form"):
 if "credentials_loaded" not in st.session_state:
     st.session_state.credentials_loaded = False
 
+# Initialize all credential state values so later references do not fail
+if "endpoint" not in st.session_state:
+    st.session_state.endpoint = ""
+if "model_name" not in st.session_state:
+    st.session_state.model_name = ""
+if "api_key" not in st.session_state:
+    st.session_state.api_key = ""
+if "api_version" not in st.session_state:
+    st.session_state.api_version = ""
+if "weather_api_key" not in st.session_state:
+    st.session_state.weather_api_key = ""
+if "tavily_api_key" not in st.session_state:
+    st.session_state.tavily_api_key = ""
+
 if submitted:
     # Validate credentials
     if all([endpoint, model_name, api_key, api_version, weather_api_key, tavily_api_key]):
