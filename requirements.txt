@@ -1,31 +1,30 @@
-# Core
+# ── Streamlit ──────────────────────────────────────────────────────────────────
 streamlit>=1.35.0
 
-# LangChain ecosystem — pin minor versions to match notebook
+# ── LangChain ecosystem ────────────────────────────────────────────────────────
+# Let pip resolve langchain-core version — do NOT pin it
+# langchain-chroma 0.2.4 needs >=0.3.60, langchain 0.3.25 needs >=0.3.58
+# Unpinning langchain-core lets the resolver pick a compatible version (0.3.60+)
 langchain==0.3.25
-langchain-core==0.3.59
 langchain-community==0.3.24
 langchain-openai==0.3.16
 langchain-text-splitters==0.3.8
 langchain-chroma==0.2.4
 
-# LangGraph
+# ── LangGraph ──────────────────────────────────────────────────────────────────
 langgraph==0.4.8
 
-# Vector store
+# ── Vector store ───────────────────────────────────────────────────────────────
 chromadb>=0.6.0
 
-# PDF loading
+# ── PDF loading ────────────────────────────────────────────────────────────────
 pymupdf==1.25.5
 
-# Web search
-tavily-python>=0.5.0
+# ── Web search — use langchain-tavily (TavilySearchResults is deprecated) ──────
+langchain-tavily>=0.1.0
 
-# SQL
+# ── SQL ────────────────────────────────────────────────────────────────────────
 sqlalchemy>=2.0.0
 
-# Environment
-python-dotenv>=1.0.0
-
-# Pydantic (LangChain v0.3 requires v2)
+# ── Pydantic ───────────────────────────────────────────────────────────────────
 pydantic>=2.0.0
