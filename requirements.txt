@@ -25,3 +25,4 @@ beautifulsoup4
 openpyxl
 matplotlib
 tabulate
+langchain-tavily

@@ -345,7 +345,9 @@ def build_graph(
         """Search the web for current information, news, recent events, or anything
         not in the knowledge bases. Use for recent platform updates, marketing industry
         news, current regulations, or any live information."""
-        results = tavily_search.invoke(query)
+        response = tavily_search.invoke(query)
+        # TavilySearch returns list directly; tavily-python backend may wrap in dict
+        results = response if isinstance(response, list) else response.get("results", [])
         parts = [
             f"Title: {r.get('title','')}\nContent: {r.get('content','')}\nSource: {r.get('url','')}"
             for r in results
