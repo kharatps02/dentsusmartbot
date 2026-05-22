@@ -6,12 +6,19 @@ Credentials are entered via the Streamlit sidebar — no .env file required.
 import os
 import json
 import warnings
+
+# ── Must be set BEFORE any chromadb/langchain import ─────────────────────────
+# chromadb imports opentelemetry-exporter-otlp-proto-grpc at module load time,
+# which pulls in protobuf>=4 and breaks descriptor creation.
+# These three env vars prevent that import chain from firing.
+os.environ["PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION"] = "python"  # force pure-Python protobuf
+os.environ["ANONYMIZED_TELEMETRY"] = "False"                      # disable chromadb telemetry
+os.environ["CHROMA_OTEL_COLLECTION_ENDPOINT"] = ""               # disable chromadb OTEL export
+# ─────────────────────────────────────────────────────────────────────────────
+
 import streamlit as st
 
 warnings.filterwarnings("ignore")
-
-# Safety net for protobuf descriptor conflict (chromadb + opentelemetry-grpc)
-os.environ.setdefault("PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION", "python")
 
 # ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -185,7 +192,6 @@ def build_graph(
     from pydantic import BaseModel, Field
     from typing import Annotated, Sequence, TypedDict, Literal
 
-    os.environ["ANONYMIZED_TELEMETRY"] = "False"
     # Expose Tavily key to environment so TavilySearchResults can pick it up
     os.environ["TAVILY_API_KEY"] = tavily_key
 
